@@ -12,6 +12,7 @@ import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.ListView;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import com.google.android.gms.nearby.Nearby;
@@ -35,14 +36,17 @@ import java.util.ArrayList;
 
 public class MainActivity extends Activity {
 
-    Button discover,advertise,stopAdvertisingButton,stopDiscoveryButton;
+    Button button1,button2,button3;
     ConnectionLifecycleCallback mConnectionLifecycleCallback;
     EndpointDiscoveryCallback endpointDiscoveryCallback;
     PayloadCallback payloadCallback;
     String newEndpoint;
     ArrayList<String> connectedDevices,availableDevices;
-    ListView availableDevicesList,connectedDevicesList;
+    ListView listView;
+    String myRole="",status = "selection";
     ArrayAdapter connectedArrayAdapter,availableArrayAdapter;
+    TextView heading;
+    int noOfDevices = 0;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -52,35 +56,17 @@ public class MainActivity extends Activity {
         connectedDevices = new ArrayList<>();
         availableDevices = new ArrayList<>();
 
-        stopAdvertisingButton = findViewById(R.id.stopAdvertise);
-        stopDiscoveryButton = findViewById(R.id.stopDiscovery);
-        discover = findViewById(R.id.discover);
-        advertise = findViewById(R.id.advertise);
-        availableDevicesList = findViewById(R.id.listView);
-        connectedDevicesList = findViewById(R.id.listView2);
+        button1 = findViewById(R.id.button1);
+        button2 = findViewById(R.id.button2);
+        button3 = findViewById(R.id.button3);
+        heading = findViewById(R.id.heading);
+        listView = findViewById(R.id.listView);
+
         connectedArrayAdapter = new ArrayAdapter(this,android.R.layout.simple_list_item_1,connectedDevices);
         availableArrayAdapter = new ArrayAdapter(this,android.R.layout.simple_list_item_1,availableDevices);
-        availableDevicesList.setAdapter(availableArrayAdapter);
-        connectedDevicesList.setAdapter(connectedArrayAdapter);
 
 
-        stopDiscoveryButton.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                stopDiscovery();
-            }
-        });
-
-        stopAdvertisingButton.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-
-                stopAdvetising();
-            }
-        });
-
-
-        connectedDevicesList.setOnItemClickListener(new AdapterView.OnItemClickListener() {
+        /*connectedDevicesList.setOnItemClickListener(new AdapterView.OnItemClickListener() {
             @Override
             public void onItemClick(AdapterView<?> adapterView, View view, int i, long l) {
                 String toEndpointId = connectedDevices.get(i);
@@ -89,29 +75,30 @@ public class MainActivity extends Activity {
                 Payload bytesPayload = Payload.fromBytes(bArray);
                 Nearby.getConnectionsClient(getApplicationContext()).sendPayload(toEndpointId, bytesPayload);
             }
-        });
+        });*/
 
-        availableDevicesList.setOnItemClickListener(new AdapterView.OnItemClickListener() {
+        listView.setOnItemClickListener(new AdapterView.OnItemClickListener() {
             @Override
             public void onItemClick(AdapterView<?> adapterView, View view, int i, long l) {
+                if(myRole.equals("discoverer")&& status.equals("connection"))
+                {
+                    Nearby.getConnectionsClient(getApplicationContext())
+                            .requestConnection("user1", availableDevices.get(i), mConnectionLifecycleCallback)
+                            .addOnSuccessListener(new OnSuccessListener<Void>() {
+                                @Override
+                                public void onSuccess(Void aVoid) {
 
-                Nearby.getConnectionsClient(getApplicationContext())
-                        .requestConnection("user1", availableDevices.get(i), mConnectionLifecycleCallback)
-                        .addOnSuccessListener(new OnSuccessListener<Void>() {
-                            @Override
-                            public void onSuccess(Void aVoid) {
+                                    //Toast.makeText(MainActivity.this, "Connected bruh!", Toast.LENGTH_SHORT).show();
+                                }
+                            })
+                            .addOnFailureListener(
+                                    new OnFailureListener() {
+                                        @Override
+                                        public void onFailure(@NonNull Exception e) {
 
-                                //Toast.makeText(MainActivity.this, "Connected bruh!", Toast.LENGTH_SHORT).show();
-                            }
-                        })
-                        .addOnFailureListener(
-                                new OnFailureListener() {
-                                    @Override
-                                    public void onFailure(@NonNull Exception e) {
-
-                                    }
-                                });
-
+                                        }
+                                    });
+                }
             }
         });
 
@@ -119,14 +106,35 @@ public class MainActivity extends Activity {
         discover.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-                startDiscovery();
+
+                if(status.equals("selection"))
+                {
+                    myRole = "advertiser";
+                    heading.setText("Advertising...");
+                    startAdvertising();
+                    listView.setAdapter(connectedArrayAdapter);
+                    button1.setVisibility(View.INVISIBLE);
+                    button3.setVisibility(View.INVISIBLE);
+                    status="connection";
+
+                }
+
             }
         });
 
-        advertise.setOnClickListener(new View.OnClickListener() {
+        button3.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-                startAdvertising();
+                if(status.equals("selection"))
+                {
+                    myRole = "discoverer";
+                    heading.setText("Discovering...");
+                    startDiscovery();
+                    listView.setAdapter(availableArrayAdapter);
+                    button1.setVisibility(View.INVISIBLE);
+                    button3.setVisibility(View.INVISIBLE);
+                    status="connection";
+                }
             }
         });
 
@@ -249,8 +257,32 @@ public class MainActivity extends Activity {
                             case ConnectionsStatusCodes.STATUS_OK:
                                 // We're connected! Can now start sending and receiving data.
                                 //Toast.makeText(MainActivity.this, "Connected Yeah!", Toast.LENGTH_SHORT).show();
-                                connectedDevices.add(endpointId);
-                                connectedArrayAdapter.notifyDataSetChanged();
+                                if(myRole.equals("discoverer") && status.equals("connection"))
+                                {
+                                    Toast.makeText(MainActivity.this, "Connected Successfully !", Toast.LENGTH_SHORT).show();
+                                    button2.setVisibility(View.VISIBLE);
+                                    button2.setText("Play Now!");
+                                    status="connected";
+                                    availableDevices.clear();
+                                    availableArrayAdapter.notifyDataSetChanged();
+                                    stopDiscovery();
+                                    heading.setText("Connected!");
+                                } else if (myRole.equals("advertiser") && status.equals("connection"))
+                                {
+                                    connectedDevices.add(endpointId);
+                                    connectedArrayAdapter.notifyDataSetChanged();
+                                    noOfDevices++;
+                                    if(noOfDevices==2)
+                                    {
+                                        button2.setVisibility(View.VISIBLE);
+                                        button2.setText("Play Now !");
+                                        status = "connected";
+                                        heading.setText("Connected!");
+                                        startAdvertising();
+                                    }
+
+                                }
+
                                 break;
                             case ConnectionsStatusCodes.STATUS_CONNECTION_REJECTED:
                                 // The connection was rejected by one or both sides.
