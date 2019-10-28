@@ -12,6 +12,7 @@ import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.ListView;
+import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -36,17 +37,20 @@ import java.util.ArrayList;
 
 public class MainActivity extends Activity {
 
-    Button button1,button2,button3;
+    Button button1,button2,button3,button4,button5;
     ConnectionLifecycleCallback mConnectionLifecycleCallback;
     EndpointDiscoveryCallback endpointDiscoveryCallback;
     PayloadCallback payloadCallback;
     String newEndpoint;
     ArrayList<String> connectedDevices,availableDevices;
     ListView listView;
-    String myRole="",status = "selection";
+    String myRole = "",status = "selection";
     ArrayAdapter connectedArrayAdapter,availableArrayAdapter;
     TextView heading;
-    int noOfDevices = 0;
+    int noOfDevices = 0,readyDevices =0;
+    ArrayList<String> myCards,cards;
+    Spinner spinner;
+    ArrayAdapter spinAdapter;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -56,15 +60,22 @@ public class MainActivity extends Activity {
         connectedDevices = new ArrayList<>();
         availableDevices = new ArrayList<>();
 
+        PopulateCards populateCards = new PopulateCards();
+
         button1 = findViewById(R.id.button1);
         button2 = findViewById(R.id.button2);
         button3 = findViewById(R.id.button3);
         heading = findViewById(R.id.heading);
         listView = findViewById(R.id.listView);
+        spinner = findViewById(R.id.spinner);
 
+        cards = new ArrayList<>();
+        populateCards.populate(cards);
         connectedArrayAdapter = new ArrayAdapter(this,android.R.layout.simple_list_item_1,connectedDevices);
         availableArrayAdapter = new ArrayAdapter(this,android.R.layout.simple_list_item_1,availableDevices);
-
+        spinAdapter = new ArrayAdapter(this,android.R.layout.simple_spinner_item,cards);
+        spinAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        spinner.setAdapter(spinAdapter);
 
         /*connectedDevicesList.setOnItemClickListener(new AdapterView.OnItemClickListener() {
             @Override
@@ -103,10 +114,35 @@ public class MainActivity extends Activity {
         });
 
 
-        discover.setOnClickListener(new View.OnClickListener() {
+        button2.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
+                if(status.equals("connected") && myRole.equals("discoverer"))
+                {
+                    String toEndpointId = connectedDevices.get(0);
+                    String message = "ready";
+                    byte[] bArray = message.getBytes();
+                    Payload bytesPayload = Payload.fromBytes(bArray);
+                    Nearby.getConnectionsClient(getApplicationContext()).sendPayload(toEndpointId, bytesPayload);
+                    button2.setEnabled(false);
+                    status = "ready";
+                }else if(status.equals("connected") && myRole.equals("advertiser"))
+                {
+                    if(readyDevices==2)
+                    {
+                        status="play";
+                        Toast.makeText(MainActivity.this, "Directing...", Toast.LENGTH_SHORT).show();
+                    }else
+                    {
+                        Toast.makeText(MainActivity.this, "Waiting for others to get ready", Toast.LENGTH_SHORT).show();
+                    }
+                }
+            }
+        });
 
+        button1.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
                 if(status.equals("selection"))
                 {
                     myRole = "advertiser";
@@ -116,9 +152,7 @@ public class MainActivity extends Activity {
                     button1.setVisibility(View.INVISIBLE);
                     button3.setVisibility(View.INVISIBLE);
                     status="connection";
-
                 }
-
             }
         });
 
@@ -141,13 +175,39 @@ public class MainActivity extends Activity {
         payloadCallback = new PayloadCallback() {
             @Override
             public void onPayloadReceived(@NonNull String s, @NonNull Payload payload) {
-
                 byte[] receivedBytes = payload.asBytes();
                 String message = new String(receivedBytes);
-                Toast.makeText(MainActivity.this, "Message from "+s+" "+message, Toast.LENGTH_SHORT).show();
+                //Toast.makeText(MainActivity.this, "Message from "+s+" "+message, Toast.LENGTH_SHORT).show();
 
+                if(myRole.equals("advertiser")&&status.equals("connected"))
+                {
+                    if(message.equals("ready"))
+                    {
+                        readyDevices++;
+                        if(readyDevices==2)
+                        {
+                            for(int i=0;i<readyDevices;i++)
+                            {
+                                String toEndpointId = connectedDevices.get(i);
+                                String toMessage = "start";
+                                byte[] bArray = toMessage.getBytes();
+                                Payload bytesPayload = Payload.fromBytes(bArray);
+                                Nearby.getConnectionsClient(getApplicationContext()).sendPayload(toEndpointId, bytesPayload);
+
+                            }
+                        }
+                    }
+                }else if(myRole.equals("discoverer")&&status.equals("ready") )
+                {
+                    if(message.equals("start"))
+                    {
+                        status = "play";
+                        Toast.makeText(MainActivity.this, message, Toast.LENGTH_SHORT).show();
+                    }
+
+                    //do something
+                }
             }
-
             @Override
             public void onPayloadTransferUpdate(@NonNull String s, @NonNull PayloadTransferUpdate payloadTransferUpdate) {
 
@@ -218,9 +278,7 @@ public class MainActivity extends Activity {
                                             public void onClick(DialogInterface dialog,
                                                                 int which)
                                             {
-
                                                 Nearby.getConnectionsClient(getApplicationContext()).acceptConnection(newEndpoint, payloadCallback);
-
                                             }
                                         });
                         // Set the Negative button with No name
@@ -248,7 +306,6 @@ public class MainActivity extends Activity {
                         AlertDialog alertDialog = builder.create();
                         // Show the Alert Dialog box
                         alertDialog.show();
-
                     }
 
                     @Override
@@ -265,9 +322,11 @@ public class MainActivity extends Activity {
                                     status="connected";
                                     availableDevices.clear();
                                     availableArrayAdapter.notifyDataSetChanged();
+                                    connectedDevices.add(endpointId);
                                     stopDiscovery();
                                     heading.setText("Connected!");
-                                } else if (myRole.equals("advertiser") && status.equals("connection"))
+                                }
+                                else if (myRole.equals("advertiser") && status.equals("connection"))
                                 {
                                     connectedDevices.add(endpointId);
                                     connectedArrayAdapter.notifyDataSetChanged();
@@ -278,11 +337,9 @@ public class MainActivity extends Activity {
                                         button2.setText("Play Now !");
                                         status = "connected";
                                         heading.setText("Connected!");
-                                        startAdvertising();
+                                        stopAdvertising();
                                     }
-
                                 }
-
                                 break;
                             case ConnectionsStatusCodes.STATUS_CONNECTION_REJECTED:
                                 // The connection was rejected by one or both sides.
@@ -360,7 +417,7 @@ public class MainActivity extends Activity {
         Nearby.getConnectionsClient(getApplicationContext()).stopDiscovery();
     }
 
-    private void stopAdvetising()
+    private void stopAdvertising()
     {
         Nearby.getConnectionsClient(getApplicationContext()).stopAdvertising();
     }
